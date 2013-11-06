@@ -32,7 +32,7 @@ import (
 	"sync/atomic"
 
 	pb "github.com/golang/groupcache/groupcachepb"
-	"github.com/golang/groupcache/lru"
+	"github.com/golang/groupcache/perceptronlru"
 	"github.com/golang/groupcache/singleflight"
 )
 
@@ -353,7 +353,7 @@ func (g *Group) CacheStats(which CacheType) CacheStats {
 type cache struct {
 	mu         sync.RWMutex
 	nbytes     int64 // of all keys and values
-	lru        *lru.Cache
+	lru        *perceptronlru.Cache
 	nhit, nget int64
 	nevict     int64 // number of evictions
 }
@@ -374,12 +374,11 @@ func (c *cache) add(key string, value ByteView) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
-		c.lru = &lru.Cache{
-			OnEvicted: func(key lru.Key, value interface{}) {
-				val := value.(ByteView)
-				c.nbytes -= int64(len(key.(string))) + int64(val.Len())
-				c.nevict++
-			},
+		c.lru = perceptronlru.New(1000)
+		c.lru.OnEvicted = func(key string, value interface{}) {
+			val := value.(ByteView)
+			c.nbytes -= int64(len(key)) + int64(val.Len())
+			c.nevict++
 		}
 	}
 	c.lru.Add(key, value)

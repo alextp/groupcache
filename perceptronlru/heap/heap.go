@@ -48,9 +48,11 @@ func (heap *Heap) Down(index int) {
 		j := j1
 		p1 := heap.elements[j1].priority
 		j2 := j1 + 1
-		p2 := heap.elements[j2].priority
-		if j2 < heap.Size && !(p1 < p2) {
-			j = j2
+		if j2 < heap.Size {
+			p2 := heap.elements[j2].priority
+			if !(p1 < p2) {
+				j = j2
+			}
 		}
 		if !(heap.elements[j].priority < heap.elements[index].priority) {
 			break

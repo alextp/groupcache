@@ -32,21 +32,20 @@ type complexStruct struct {
 
 var getTests = []struct {
 	name       string
-	keyToAdd   interface{}
-	keyToGet   interface{}
+	keyToAdd   string
+	keyToGet   string
 	expectedOk bool
 }{
 	{"string_hit", "myKey", "myKey", true},
 	{"string_miss", "myKey", "nonsense", false},
-	{"simple_struct_hit", simpleStruct{1, "two"}, simpleStruct{1, "two"}, true},
-	{"simeple_struct_miss", simpleStruct{1, "two"}, simpleStruct{0, "noway"}, false},
-	{"complex_struct_hit", complexStruct{1, simpleStruct{2, "three"}},
-		complexStruct{1, simpleStruct{2, "three"}}, true},
+	{"simple_struct_hit", "1, two", "1, two", true},
+	{"simeple_struct_miss", "1, two", "0, noway", false},
+	{"complex_struct_hit", "1, 2, three", "1, 2, three", true},
 }
 
 func TestGet(t *testing.T) {
 	for _, tt := range getTests {
-		lru := New()
+		lru := New(100)
 		lru.Add(tt.keyToAdd, 1234)
 		val, ok := lru.Get(tt.keyToGet)
 		if ok != tt.expectedOk {
@@ -58,7 +57,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	lru := New()
+	lru := New(100)
 	lru.Add("myKey", 1234)
 	if val, ok := lru.Get("myKey"); !ok {
 		t.Fatal("TestRemove returned no match")

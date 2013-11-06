@@ -18,25 +18,42 @@ limitations under the License.
 // next access time with a perceptron.
 package perceptronlru
 
-import 	"github.com/golang/groupcache/perceptronlru/heap"
-
+import "github.com/golang/groupcache/perceptronlru/heap"
+import "github.com/golang/groupcache/perceptronlru/perceptron"
+import "hash/fnv"
 
 // Cache is an LRU cache. It is not safe for concurrent access.
 type Cache struct {
 	// OnEvicted optionally specificies a callback function to be
 	// executed when an entry is purged from the cache.
-	OnEvicted func(key Key, value interface{})
+	OnEvicted func(key string, value interface{})
 
+	model      *perceptron.Perceptron
 	operations int
 	heap       *heap.Heap
 	cache      map[interface{}]*heap.HeapItem
 }
 
 // A Key may be any value that is comparable. See http://golang.org/ref/spec#Comparison_operators
-type Key interface{}
+
+func features(str string) []int32 {
+	// picks all character 3-grams, 5-grams, and 7-grams from key
+	key := []byte(str)
+	features := make([]int32, 0, 3*len(key))
+	lengths := &[...]int{3, 5, 7}
+	for i := 0; i < len(lengths); i++ {
+		length := lengths[i]
+		for j := 0; j < len(key)-length; j++ {
+			hash := fnv.New32a()
+			hash.Write(key[j:j+length])
+			features = append(features, int32(hash.Sum32()))
+		}
+	}
+	return features
+}
 
 type entry struct {
-	key     Key
+	key     string
 	lastUse int
 	value   interface{}
 }
@@ -44,16 +61,17 @@ type entry struct {
 // New creates a new Cache.
 // If maxEntries is zero, the cache has no limit and it's assumed
 // that eviction is done by the caller.
-func New() *Cache {
+func New(modelSize int32) *Cache {
 	return &Cache{
 		heap:       heap.NewHeap(),
+		model:      perceptron.New(modelSize),
 		operations: 0,
 		cache:      make(map[interface{}]*heap.HeapItem),
 	}
 }
 
 // Add adds a value to the cache.
-func (c *Cache) Add(key Key, value interface{}) {
+func (c *Cache) Add(key string, value interface{}) {
 	if c.cache == nil {
 		c.cache = make(map[interface{}]*heap.HeapItem)
 		c.heap = heap.NewHeap()
@@ -61,24 +79,27 @@ func (c *Cache) Add(key Key, value interface{}) {
 	}
 	if ee, ok := c.cache[key]; ok {
 		c.operations += 1
-		c.heap.Reinsert(ee.Position, float64(-c.operations)) // TODO(apassos): perceptron decision goes here
+		priority := -(float64(c.operations) + c.model.Update(features(key), float64(c.operations - ee.Value.(*entry).lastUse)))
+		c.heap.Reinsert(ee.Position, priority) // TODO(apassos): perceptron decision goes here
 		ee.Value.(*entry).lastUse = c.operations
 		ee.Value.(*entry).value = value
 		return
 	}
 	c.operations += 1
-	ele := c.heap.Insert(&entry{key, c.operations, value}, float64(-c.operations)) // TODO(apassos): perceptron decision goes here
+	priority := -(float64(c.operations) + c.model.Score(features(key)))
+	ele := c.heap.Insert(&entry{key, c.operations, value}, priority) // TODO(apassos): perceptron decision goes here
 	c.cache[key] = ele
 }
 
 // Get looks up a key's value from the cache.
-func (c *Cache) Get(key Key) (value interface{}, ok bool) {
+func (c *Cache) Get(key string) (value interface{}, ok bool) {
 	if c.cache == nil {
 		return
 	}
 	c.operations += 1
 	if ele, hit := c.cache[key]; hit {
-		c.heap.Reinsert(ele.Position, float64(-c.operations)) // TODO(apassos): perceptron decision goes here
+		priority := -(float64(c.operations) + c.model.Update(features(key), float64(c.operations - ele.Value.(*entry).lastUse)))
+		c.heap.Reinsert(ele.Position, priority) // TODO(apassos): perceptron decision goes here
 		ele.Value.(*entry).lastUse = c.operations
 		return ele.Value.(*entry).value, true
 	}
@@ -86,7 +107,7 @@ func (c *Cache) Get(key Key) (value interface{}, ok bool) {
 }
 
 // Remove removes the provided key from the cache.
-func (c *Cache) Remove(key Key) {
+func (c *Cache) Remove(key string) {
 	if c.cache == nil {
 		return
 	}
@@ -101,14 +122,18 @@ func (c *Cache) RemoveOldest() {
 	if c.cache == nil {
 		return
 	}
-	ele := c.heap.Pop()
-	if ele != nil {
-		c.removeElement(ele)
+	if c.heap.Size > 0 {
+		c.heap.Pop()
 	}
 }
 
 func (c *Cache) removeElement(e *heap.HeapItem) {
 	// TODO(apassos): perceptron update goes here
+	feats := features(e.Value.(*entry).key)
+	prediction := float64(e.Value.(*entry).lastUse) + c.model.Score(feats)
+	if prediction > float64(c.operations) {
+		c.model.Update(feats, float64(c.operations-e.Value.(*entry).lastUse))
+	}
 	c.heap.Remove(e.Position)
 	kv := e.Value.(*entry)
 	delete(c.cache, kv.key)
