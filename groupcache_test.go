@@ -212,6 +212,7 @@ func TestCacheEviction(t *testing.T) {
 		stringGroup.Get(dummyCtx, key, StringSink(&res))
 		bytesFlooded += int64(len(key) + len(res))
 	}
+
 	evicts := g.mainCache.nevict - evict0
 	if evicts <= 0 {
 		t.Errorf("evicts = %v; want more than 0", evicts)

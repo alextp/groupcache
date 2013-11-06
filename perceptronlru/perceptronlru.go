@@ -45,7 +45,7 @@ func features(str string) []int32 {
 		length := lengths[i]
 		for j := 0; j < len(key)-length; j++ {
 			hash := fnv.New32a()
-			hash.Write(key[j:j+length])
+			hash.Write(key[j : j+length])
 			features = append(features, int32(hash.Sum32()))
 		}
 	}
@@ -79,14 +79,14 @@ func (c *Cache) Add(key string, value interface{}) {
 	}
 	if ee, ok := c.cache[key]; ok {
 		c.operations += 1
-		priority := -(float64(c.operations) + c.model.Update(features(key), float64(c.operations - ee.Value.(*entry).lastUse)))
+		priority := (float64(c.operations) + c.model.Update(features(key), float64(c.operations-ee.Value.(*entry).lastUse)))
 		c.heap.Reinsert(ee.Position, priority) // TODO(apassos): perceptron decision goes here
 		ee.Value.(*entry).lastUse = c.operations
 		ee.Value.(*entry).value = value
 		return
 	}
 	c.operations += 1
-	priority := -(float64(c.operations) + c.model.Score(features(key)))
+	priority := (float64(c.operations) + c.model.Score(features(key)))
 	ele := c.heap.Insert(&entry{key, c.operations, value}, priority) // TODO(apassos): perceptron decision goes here
 	c.cache[key] = ele
 }
@@ -98,7 +98,7 @@ func (c *Cache) Get(key string) (value interface{}, ok bool) {
 	}
 	c.operations += 1
 	if ele, hit := c.cache[key]; hit {
-		priority := -(float64(c.operations) + c.model.Update(features(key), float64(c.operations - ele.Value.(*entry).lastUse)))
+		priority := (float64(c.operations) + c.model.Update(features(key), float64(c.operations-ele.Value.(*entry).lastUse)))
 		c.heap.Reinsert(ele.Position, priority) // TODO(apassos): perceptron decision goes here
 		ele.Value.(*entry).lastUse = c.operations
 		return ele.Value.(*entry).value, true
@@ -123,17 +123,18 @@ func (c *Cache) RemoveOldest() {
 		return
 	}
 	if c.heap.Size > 0 {
-		c.heap.Pop()
+		ele := c.heap.Head()
+		// TODO(apassos): perceptron update goes here
+		feats := features(ele.Value.(*entry).key)
+		prediction := float64(ele.Value.(*entry).lastUse) + c.model.Score(feats)
+		if prediction > float64(c.operations) {
+			c.model.Update(feats, float64(c.operations-ele.Value.(*entry).lastUse))
+		}
+		c.removeElement(ele)
 	}
 }
 
 func (c *Cache) removeElement(e *heap.HeapItem) {
-	// TODO(apassos): perceptron update goes here
-	feats := features(e.Value.(*entry).key)
-	prediction := float64(e.Value.(*entry).lastUse) + c.model.Score(feats)
-	if prediction > float64(c.operations) {
-		c.model.Update(feats, float64(c.operations-e.Value.(*entry).lastUse))
-	}
 	c.heap.Remove(e.Position)
 	kv := e.Value.(*entry)
 	delete(c.cache, kv.key)

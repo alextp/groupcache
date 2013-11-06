@@ -71,7 +71,7 @@ func (model *Perceptron) Update(features []int32, target float64) float64 {
 		model.adagrad[idx] += grad * grad
 		lrate := 1.0 / math.Sqrt(model.adagrad[idx])
 		score += direction * lrate
-		model.weights[idx] += grad * lrate
+		// model.weights[idx] += grad * lrate
 	}
 	return score
 }

@@ -98,3 +98,7 @@ func (heap *Heap) Reinsert(index int, priority float64) {
 func (heap *Heap) Pop() *HeapItem {
 	return heap.Remove(0)
 }
+
+func (heap *Heap) Head() *HeapItem {
+	return heap.elements[0]
+}
