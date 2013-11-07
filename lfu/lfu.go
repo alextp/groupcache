@@ -29,7 +29,7 @@ type Cache struct {
 	version    uint32
 	alpha      float64
 	limit      int32
-	heap       *heap.Heap
+	Heap       *heap.Heap
 	cache      map[interface{}]*heap.HeapItem
 }
 
@@ -46,7 +46,7 @@ type entry struct {
 // that eviction is done by the caller.
 func New(alpha float64, limit int32) *Cache {
 	return &Cache{
-		heap:       heap.NewHeap(),
+		Heap:       heap.NewHeap(),
 		alpha:      alpha,
 		limit:      limit,
 		version:    0,
@@ -77,7 +77,7 @@ func (c *Cache) Add(key string, value interface{}, cost float64) {
 		entry := ee.Value.(*entry)
 		c.doOperation(entry)
 		priority := entry.weights * entry.useAccumulator
-		c.heap.Reinsert(ee.Position, priority)
+		c.Heap.Reinsert(ee.Position, priority)
 		return
 	}
 	entry := &entry{
@@ -89,7 +89,7 @@ func (c *Cache) Add(key string, value interface{}, cost float64) {
 	}
 	c.doOperation(entry)
 	priority := entry.weights * entry.useAccumulator
-	ele := c.heap.Insert(entry, priority)
+	ele := c.Heap.Insert(entry, priority)
 	c.cache[key] = ele
 }
 
@@ -99,7 +99,7 @@ func (c *Cache) Get(key string) (value interface{}, ok bool) {
 		ee := ele.Value.(*entry)
 		c.doOperation(ee)
 		priority := ee.weights * ee.useAccumulator
-		c.heap.Reinsert(ele.Position, priority)
+		c.Heap.Reinsert(ele.Position, priority)
 		return ele.Value.(*entry).value, true
 	} else {
 		c.doOperation(nil)
@@ -123,14 +123,14 @@ func (c *Cache) RemoveOldest() {
 	if c.cache == nil {
 		return
 	}
-	if c.heap.Size > 0 {
-		ele := c.heap.Head()
+	if c.Heap.Size > 0 {
+		ele := c.Heap.Head()
 		c.removeElement(ele)
 	}
 }
 
 func (c *Cache) removeElement(e *heap.HeapItem) {
-	c.heap.Remove(e.Position)
+	c.Heap.Remove(e.Position)
 	kv := e.Value.(*entry)
 	delete(c.cache, kv.key)
 	if c.OnEvicted != nil {
@@ -143,5 +143,5 @@ func (c *Cache) Len() int {
 	if c.cache == nil {
 		return 0
 	}
-	return c.heap.Size
+	return c.Heap.Size
 }
