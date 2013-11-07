@@ -79,14 +79,14 @@ func (c *Cache) Add(key string, value interface{}) {
 	}
 	if ee, ok := c.cache[key]; ok {
 		c.operations += 1
-		priority := (float64(c.operations) + c.model.Update(features(key), float64(c.operations-ee.Value.(*entry).lastUse)))
+		priority := -(float64(c.operations) + c.model.Update(features(key), float64(c.operations-ee.Value.(*entry).lastUse)))
 		c.Heap.Reinsert(ee.Position, priority) // TODO(apassos): perceptron decision goes here
 		ee.Value.(*entry).lastUse = c.operations
 		ee.Value.(*entry).value = value
 		return
 	}
 	c.operations += 1
-	priority := (float64(c.operations) + c.model.Score(features(key)))
+	priority := -(float64(c.operations) + c.model.Score(features(key)))
 	ele := c.Heap.Insert(&entry{key, c.operations, value}, priority) // TODO(apassos): perceptron decision goes here
 	c.cache[key] = ele
 }
@@ -98,7 +98,7 @@ func (c *Cache) Get(key string) (value interface{}, ok bool) {
 	}
 	c.operations += 1
 	if ele, hit := c.cache[key]; hit {
-		priority := (float64(c.operations) + c.model.Update(features(key), float64(c.operations-ele.Value.(*entry).lastUse)))
+		priority := -(float64(c.operations) + c.model.Update(features(key), float64(c.operations-ele.Value.(*entry).lastUse)))
 		c.Heap.Reinsert(ele.Position, priority) // TODO(apassos): perceptron decision goes here
 		ele.Value.(*entry).lastUse = c.operations
 		return ele.Value.(*entry).value, true
