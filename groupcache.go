@@ -30,9 +30,10 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	pb "github.com/golang/groupcache/groupcachepb"
-	"github.com/golang/groupcache/perceptronlru"
+	"github.com/golang/groupcache/lfu"
 	"github.com/golang/groupcache/singleflight"
 )
 
@@ -224,6 +225,7 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 // load loads key either by invoking the getter locally or by sending it to another machine.
 func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPopulated bool, err error) {
 	g.Stats.Loads.Add(1)
+	t0 := float64(time.Now().Unix())
 	viewi, err := g.loadGroup.Do(key, func() (interface{}, error) {
 		g.Stats.LoadsDeduped.Add(1)
 		var value ByteView
@@ -247,7 +249,7 @@ func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPo
 		}
 		g.Stats.LocalLoads.Add(1)
 		destPopulated = true // only one caller of load gets this return value
-		g.populateCache(key, value, &g.mainCache)
+		g.populateCache(key, value, &g.mainCache, float64(time.Now().Unix())-t0)
 		return value, nil
 	})
 	if err == nil {
@@ -279,7 +281,7 @@ func (g *Group) getFromPeer(ctx Context, peer ProtoGetter, key string) (ByteView
 	// conditionally populate hotCache.  For now just do it some
 	// percentage of the time.
 	if rand.Intn(10) == 0 {
-		g.populateCache(key, value, &g.hotCache)
+		g.populateCache(key, value, &g.hotCache, 1)
 	}
 	return value, nil
 }
@@ -296,11 +298,11 @@ func (g *Group) lookupCache(key string) (value ByteView, ok bool) {
 	return
 }
 
-func (g *Group) populateCache(key string, value ByteView, cache *cache) {
+func (g *Group) populateCache(key string, value ByteView, cache *cache, cost float64) {
 	if g.cacheBytes <= 0 {
 		return
 	}
-	cache.add(key, value)
+	cache.add(key, value, cost)
 
 	// Evict items from cache(s) if necessary.
 	for {
@@ -353,7 +355,7 @@ func (g *Group) CacheStats(which CacheType) CacheStats {
 type cache struct {
 	mu         sync.RWMutex
 	nbytes     int64 // of all keys and values
-	lru        *perceptronlru.Cache
+	lru        *lfu.Cache
 	nhit, nget int64
 	nevict     int64 // number of evictions
 }
@@ -370,18 +372,18 @@ func (c *cache) stats() CacheStats {
 	}
 }
 
-func (c *cache) add(key string, value ByteView) {
+func (c *cache) add(key string, value ByteView, cost float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
-		c.lru = perceptronlru.New(1000)
+		c.lru = lfu.New(0.99, 1000)
 		c.lru.OnEvicted = func(key string, value interface{}) {
 			val := value.(ByteView)
 			c.nbytes -= int64(len(key)) + int64(val.Len())
 			c.nevict++
 		}
 	}
-	c.lru.Add(key, value)
+	c.lru.Add(key, value, cost)
 	c.nbytes += int64(len(key)) + int64(value.Len())
 }
 
