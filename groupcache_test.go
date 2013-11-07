@@ -295,7 +295,6 @@ func TestPeers(t *testing.T) {
 		g := testGroup
 		g.cacheBytes = maxBytes
 		g.mainCache = cache{}
-		g.hotCache = cache{}
 	}
 
 	// Base case; peers all up, with no problems.
