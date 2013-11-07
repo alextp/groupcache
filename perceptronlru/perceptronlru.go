@@ -30,7 +30,7 @@ type Cache struct {
 
 	model      *perceptron.Perceptron
 	operations int
-	heap       *heap.Heap
+	Heap       *heap.Heap
 	cache      map[interface{}]*heap.HeapItem
 }
 
@@ -63,7 +63,7 @@ type entry struct {
 // that eviction is done by the caller.
 func New(modelSize int32) *Cache {
 	return &Cache{
-		heap:       heap.NewHeap(),
+		Heap:       heap.NewHeap(),
 		model:      perceptron.New(modelSize),
 		operations: 0,
 		cache:      make(map[interface{}]*heap.HeapItem),
@@ -74,20 +74,20 @@ func New(modelSize int32) *Cache {
 func (c *Cache) Add(key string, value interface{}) {
 	if c.cache == nil {
 		c.cache = make(map[interface{}]*heap.HeapItem)
-		c.heap = heap.NewHeap()
+		c.Heap = heap.NewHeap()
 		c.operations = 0
 	}
 	if ee, ok := c.cache[key]; ok {
 		c.operations += 1
 		priority := (float64(c.operations) + c.model.Update(features(key), float64(c.operations-ee.Value.(*entry).lastUse)))
-		c.heap.Reinsert(ee.Position, priority) // TODO(apassos): perceptron decision goes here
+		c.Heap.Reinsert(ee.Position, priority) // TODO(apassos): perceptron decision goes here
 		ee.Value.(*entry).lastUse = c.operations
 		ee.Value.(*entry).value = value
 		return
 	}
 	c.operations += 1
 	priority := (float64(c.operations) + c.model.Score(features(key)))
-	ele := c.heap.Insert(&entry{key, c.operations, value}, priority) // TODO(apassos): perceptron decision goes here
+	ele := c.Heap.Insert(&entry{key, c.operations, value}, priority) // TODO(apassos): perceptron decision goes here
 	c.cache[key] = ele
 }
 
@@ -99,7 +99,7 @@ func (c *Cache) Get(key string) (value interface{}, ok bool) {
 	c.operations += 1
 	if ele, hit := c.cache[key]; hit {
 		priority := (float64(c.operations) + c.model.Update(features(key), float64(c.operations-ele.Value.(*entry).lastUse)))
-		c.heap.Reinsert(ele.Position, priority) // TODO(apassos): perceptron decision goes here
+		c.Heap.Reinsert(ele.Position, priority) // TODO(apassos): perceptron decision goes here
 		ele.Value.(*entry).lastUse = c.operations
 		return ele.Value.(*entry).value, true
 	}
@@ -122,8 +122,8 @@ func (c *Cache) RemoveOldest() {
 	if c.cache == nil {
 		return
 	}
-	if c.heap.Size > 0 {
-		ele := c.heap.Head()
+	if c.Heap.Size > 0 {
+		ele := c.Heap.Head()
 		// TODO(apassos): perceptron update goes here
 		feats := features(ele.Value.(*entry).key)
 		prediction := float64(ele.Value.(*entry).lastUse) + c.model.Score(feats)
@@ -135,7 +135,7 @@ func (c *Cache) RemoveOldest() {
 }
 
 func (c *Cache) removeElement(e *heap.HeapItem) {
-	c.heap.Remove(e.Position)
+	c.Heap.Remove(e.Position)
 	kv := e.Value.(*entry)
 	delete(c.cache, kv.key)
 	if c.OnEvicted != nil {
@@ -148,5 +148,5 @@ func (c *Cache) Len() int {
 	if c.cache == nil {
 		return 0
 	}
-	return c.heap.Size
+	return c.Heap.Size
 }

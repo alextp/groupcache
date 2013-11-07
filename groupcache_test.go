@@ -220,6 +220,8 @@ func TestCacheEviction(t *testing.T) {
 
 	// Test that the key is gone.
 	fills = countFills(getTestKey)
+	println(g.mainCache.lru.Heap.Size)
+	println(g.mainCache.nbytes)
 	if fills != 1 {
 		t.Fatalf("expected 1 cache fill after cache trashing; got %d", fills)
 	}
