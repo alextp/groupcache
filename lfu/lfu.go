@@ -16,7 +16,6 @@ limitations under the License.
 
 package lfu
 
-import "github.com/golang/groupcache/perceptronlru/heap"
 import "math"
 
 // Cache is an LFU cache. It is not safe for concurrent access.
@@ -26,17 +25,17 @@ type Cache struct {
 	OnEvicted func(key string, value interface{})
 
 	operations int32
-	version    uint32
+	version    int64
 	alpha      float64
 	limit      int32
-	Heap       *heap.Heap
-	cache      map[interface{}]*heap.HeapItem
+	Heap       *Heap
+	cache      map[interface{}]*HeapItem
 }
 
 type entry struct {
 	key            string
 	useAccumulator float64
-	version        uint32
+	version        int64
 	weights        float64
 	value          interface{}
 }
@@ -46,12 +45,12 @@ type entry struct {
 // that eviction is done by the caller.
 func New(alpha float64, limit int32) *Cache {
 	return &Cache{
-		Heap:       heap.NewHeap(),
+		Heap:       NewHeap(),
 		alpha:      alpha,
 		limit:      limit,
 		version:    0,
 		operations: 0,
-		cache:      make(map[interface{}]*heap.HeapItem),
+		cache:      make(map[interface{}]*HeapItem),
 	}
 }
 
@@ -77,7 +76,7 @@ func (c *Cache) Add(key string, value interface{}, cost float64) {
 		entry := ee.Value.(*entry)
 		c.doOperation(entry)
 		priority := entry.weights * entry.useAccumulator
-		c.Heap.Reinsert(ee.Position, priority)
+		c.Heap.Reinsert(ee.Position, priority, c.version)
 		return
 	}
 	entry := &entry{
@@ -89,7 +88,7 @@ func (c *Cache) Add(key string, value interface{}, cost float64) {
 	}
 	c.doOperation(entry)
 	priority := entry.weights * entry.useAccumulator
-	ele := c.Heap.Insert(entry, priority)
+	ele := c.Heap.Insert(entry, priority, c.version)
 	c.cache[key] = ele
 }
 
@@ -99,7 +98,7 @@ func (c *Cache) Get(key string) (value interface{}, ok bool) {
 		ee := ele.Value.(*entry)
 		c.doOperation(ee)
 		priority := ee.weights * ee.useAccumulator
-		c.Heap.Reinsert(ele.Position, priority)
+		c.Heap.Reinsert(ele.Position, priority, c.version)
 		return ele.Value.(*entry).value, true
 	} else {
 		c.doOperation(nil)
@@ -129,7 +128,7 @@ func (c *Cache) RemoveOldest() {
 	}
 }
 
-func (c *Cache) removeElement(e *heap.HeapItem) {
+func (c *Cache) removeElement(e *HeapItem) {
 	c.Heap.Remove(e.Position)
 	kv := e.Value.(*entry)
 	delete(c.cache, kv.key)
