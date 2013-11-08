@@ -76,7 +76,8 @@ func New(modelSize int32) *Cache {
 
 func (c *Cache) Check(name string) {
 	return
-	/*for key := range c.cache {
+	/*
+	for key := range c.cache {
 		k := c.cache[key]
 		key2 := k.Value.(*entry).key
 		if key2 != key {
@@ -151,7 +152,7 @@ func (c *Cache) RemoveOldest() {
 }
 
 func (c *Cache) removeElement(e *heap.HeapItem) {
-	//println("deleting", e.Position)
+	//println("deleting", e.Position, c.Heap.Size)
 	c.Heap.Remove(e.Position)
 	kv := e.Value.(*entry)
 	delete(c.cache, kv.key)

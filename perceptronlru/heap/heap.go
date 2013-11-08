@@ -89,12 +89,12 @@ func (heap *Heap) Insert(element interface{}, Priority float64) *HeapItem {
 }
 
 func (heap *Heap) Remove(index int) *HeapItem {
+	e := heap.elements[index]
 	n := heap.Size - 1
 	heap.Swap(index, n)
-	heap.Down(index)
-	e := heap.elements[n]
-	heap.Size -= 1
 	heap.elements = heap.elements[0:heap.Size]
+	heap.Up(index)
+	heap.Down(index)
 	return e
 }
 
