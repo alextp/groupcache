@@ -40,7 +40,7 @@ func less(i, j *HeapItem) bool {
 func (heap *Heap) Up(index int) {
 	for {
 		i := (index - 1) / 2 // parent
-		if i == index || !less(heap.elements[index], heap.elements[i]) {
+		if i == index || !less(heap.elements[i], heap.elements[index]) {
 			break
 		}
 		heap.Swap(i, index)
