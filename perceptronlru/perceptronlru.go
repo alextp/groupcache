@@ -43,7 +43,7 @@ func features(str string) []int32 {
 	features = append(features, 0)
 	hash := fnv.New32a()
 	features = append(features, int32(hash.Sum32()))
-	lengths := &[...]int{3, 5, 7}
+/*	lengths := &[...]int{3, 5, 7}
 	for i := 0; i < len(lengths); i++ {
 		length := lengths[i]
 		for j := 0; j < len(key)-length; j++ {
@@ -51,7 +51,7 @@ func features(str string) []int32 {
 			hash.Write(key[j : j+length])
 			features = append(features, int32(hash.Sum32()))
 		}
-	}
+	}*/
 	return features
 
 }
