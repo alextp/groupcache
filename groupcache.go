@@ -342,7 +342,7 @@ func (c *cache) add(key string, value ByteView, cost float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
-		c.lru = lfu.New(0.99, 100000)
+		c.lru = lfu.New(0.0000001, 100000000)
 		c.lru.OnEvicted = func(key string, value interface{}) {
 			val := value.(ByteView)
 			c.nbytes -= int64(len(key)) + int64(val.Len())
