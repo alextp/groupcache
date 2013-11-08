@@ -43,7 +43,7 @@ func features(str string) []int32 {
 	features = append(features, 0)
 	hash := fnv.New32a()
 	features = append(features, int32(hash.Sum32()))
-	lengths := &[...]int{3, 5, 7}
+	lengths := &[...]int{5, 7, 15}
 	for i := 0; i < len(lengths); i++ {
 		length := lengths[i]
 		for j := 0; j < len(key)-length; j++ {
@@ -76,7 +76,8 @@ func New(modelSize int32) *Cache {
 
 func (c *Cache) Check(name string) {
 	return
-	/*for key := range c.cache {
+	/*
+	for key := range c.cache {
 		k := c.cache[key]
 		key2 := k.Value.(*entry).key
 		if key2 != key {
@@ -91,11 +92,26 @@ func (c *Cache) Check(name string) {
 	}*/
 }
 
+func (c *Cache) priority(key string) float64 {
+	if c.operations < 100000 {
+		return float64(c.operations)
+	}
+	return float64(c.operations) + c.model.Score(features(key))
+}
+
+func (c *Cache) priorityEle(key string, ee *heap.HeapItem) float64 {
+	if c.operations < 100000 {
+		c.model.Update(features(key), ee.Priority -float64(c.operations))
+		return float64(c.operations)
+	}
+	return float64(c.operations) + c.model.Update(features(key), ee.Priority -float64(c.operations))
+}
+
 // Add adds a value to the cache.
 func (c *Cache) Add(key string, value interface{}) {
 	if ee, ok := c.cache[key]; ok {
 		c.operations += 1
-		priority := (float64(c.operations) + c.model.Update(features(key), ee.Priority -float64(c.operations)))
+		priority := c.priorityEle(key, ee)
 		c.Heap.Reinsert(ee.Position, priority) // TODO(apassos): perceptron decision goes here
 		ee.Value.(*entry).lastUse = c.operations
 		ee.Value.(*entry).value = value
@@ -103,7 +119,7 @@ func (c *Cache) Add(key string, value interface{}) {
 		return
 	}
 	c.operations += 1
-	priority := (float64(c.operations) + c.model.Score(features(key)))
+	priority := c.priority(key)
 	ele := c.Heap.Insert(&entry{key, c.operations, value}, priority) // TODO(apassos): perceptron decision goes here
 	c.cache[key] = ele
 	c.Check("addnew")
@@ -113,7 +129,7 @@ func (c *Cache) Add(key string, value interface{}) {
 func (c *Cache) Get(key string) (value interface{}, ok bool) {
 	c.operations += 1
 	if ele, hit := c.cache[key]; hit {
-		priority := (float64(c.operations) + c.model.Update(features(key), ele.Priority -float64(c.operations)))
+		priority := c.priorityEle(key, ele)
 		if ele.Position >= c.Heap.Size {
 			println("Really weird, position of element is bigger than heap size", ele.Position, c.Heap.Size)
 		}
@@ -143,7 +159,7 @@ func (c *Cache) RemoveOldest() {
 		feats := features(ele.Value.(*entry).key)
 		prediction := float64(ele.Value.(*entry).lastUse) + c.model.Score(feats)
 		if prediction > float64(c.operations) {
-			c.model.Update(feats, ele.Priority -float64(c.operations))
+			c.model.Update(feats, float64(c.operations - ele.Value.(*entry).lastUse))
 		}
 		c.removeElement(ele)
 	}
@@ -151,7 +167,7 @@ func (c *Cache) RemoveOldest() {
 }
 
 func (c *Cache) removeElement(e *heap.HeapItem) {
-	//println("deleting", e.Position)
+	//println("deleting", e.Position, c.Heap.Size)
 	c.Heap.Remove(e.Position)
 	kv := e.Value.(*entry)
 	delete(c.cache, kv.key)
