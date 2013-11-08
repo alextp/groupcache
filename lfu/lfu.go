@@ -58,7 +58,7 @@ func (c *Cache) doOperation(ee *entry) {
 	c.operations += 1
 	if c.operations == c.limit {
 		c.operations = 0
-		c.limit += 1
+		c.version += 1
 	}
 	if ee != nil {
 		if c.version-ee.version != 0 {
@@ -84,7 +84,7 @@ func (c *Cache) Add(key string, value interface{}, cost float64) {
 		value:          value,
 		weights:        cost,
 		version:        0,
-		useAccumulator: 0,
+		useAccumulator: 1,
 	}
 	c.doOperation(entry)
 	priority := entry.weights * entry.useAccumulator

@@ -39,33 +39,33 @@ func less(i, j *HeapItem) bool {
 
 func (heap *Heap) Up(index int) {
 	for {
-		i := (index - 1) / 2 // parent
-		if i == index || !less(heap.elements[i], heap.elements[index]) {
+		parent := (index - 1) / 2 // parent
+		if parent == index || less(heap.elements[parent], heap.elements[index]) {
 			break
 		}
-		heap.Swap(i, index)
-		index = i
+		heap.Swap(parent, index)
+		index = parent
 	}
 }
 
 func (heap *Heap) Down(index int) {
 	for {
-		j1 := 2*index + 1
-		if j1 >= heap.Size || j1 < 0 {
+		left := 2*index + 1
+		if left >= heap.Size || left < 0 {
 			break
 		}
-		j := j1
-		j2 := j1 + 1
-		if j2 < heap.Size {
-			if !less(heap.elements[j1], heap.elements[j2]) {
-				j = j2
+		child := left
+		right := left + 1
+		if right < heap.Size {
+			if !less(heap.elements[left], heap.elements[right]) {
+				child = right
 			}
 		}
-		if !less(heap.elements[j], heap.elements[index]) {
+		if less(heap.elements[child], heap.elements[index]) {
 			break
 		}
-		heap.Swap(index, j)
-		index = j
+		heap.Swap(index, child)
+		index = child
 	}
 }
 
@@ -90,18 +90,25 @@ func (heap *Heap) Insert(element interface{}, priority float64, version int64) *
 func (heap *Heap) Remove(index int) *HeapItem {
 	n := heap.Size - 1
 	heap.Swap(index, n)
-	heap.Down(index)
 	e := heap.elements[n]
 	heap.Size -= 1
 	heap.elements = heap.elements[0:heap.Size]
+	heap.Down(index)
 	return e
 }
 
 func (heap *Heap) Reinsert(index int, priority float64, version int64) {
-	item := heap.Remove(index)
-	item.priority = priority
-	item.version = version
-	heap.Push(item)
+	e := heap.elements[index]
+	for {
+		if e.Position == 0 {
+			break
+		}
+		heap.Swap(e.Position, (e.Position-1)/2)
+	}
+	heap.Remove(0)
+	e.priority = priority
+	e.version = version
+	heap.Push(e)
 }
 
 func (heap *Heap) Pop() *HeapItem {
