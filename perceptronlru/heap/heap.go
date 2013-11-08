@@ -29,9 +29,11 @@ func (heap *Heap) Swap(i, j int) {
 	heap.elements[j] = a
 	heap.elements[i].Position = i
 	heap.elements[j].Position = j
+	heap.Check("swap")
 }
 
 func (heap *Heap) Up(index int) {
+	heap.Check("preup")
 	for {
 		i := (index - 1) / 2 // parent
 		if i == index || !(heap.elements[i].Priority < heap.elements[index].Priority) {
@@ -40,6 +42,7 @@ func (heap *Heap) Up(index int) {
 		heap.Swap(i, index)
 		index = i
 	}
+	heap.Check("up")
 }
 
 func (heap *Heap) Down(index int) {
@@ -63,19 +66,18 @@ func (heap *Heap) Down(index int) {
 		heap.Swap(index, j)
 		index = j
 	}
+	heap.Check("down")
 }
 
 func (heap *Heap) Push(element *HeapItem) {
+	heap.Check("prepush")
 	element.Position = heap.Size
 	heap.Size += 1
-	heap.elements = append(heap.elements, element)
-	if element.Position >= heap.Size {
-		println("messing up the declaration of position")
-	}
-	if heap.elements[element.Position] != element {
-		println("Not inserting where I want to")
-	}
+	heap.elements = append(heap.elements, nil)
+	heap.elements[element.Position] = element
+	heap.Check("push1")
 	heap.Up(element.Position)
+	heap.Check("push")
 }
 
 func (heap *Heap) Insert(element interface{}, Priority float64) *HeapItem {
@@ -85,16 +87,22 @@ func (heap *Heap) Insert(element interface{}, Priority float64) *HeapItem {
 		Position: -1,
 	}
 	heap.Push(item)
+	heap.Check("insert")
 	return item
 }
 
 func (heap *Heap) Remove(index int) *HeapItem {
+	if index != 0 {
+		println(index)
+		println(heap.elements[22432423423])
+	}
 	e := heap.elements[index]
 	n := heap.Size - 1
 	heap.Swap(index, n)
 	heap.elements = heap.elements[0:heap.Size]
-	heap.Up(index)
+	heap.Size -= 1
 	heap.Down(index)
+	heap.Check("remove")
 	return e
 }
 
@@ -102,24 +110,48 @@ func (heap *Heap) Reinsert(index int, priority float64) {
 	if index < heap.Size {
 		if heap.elements[index].Position != index {
 			println("we have an element at the wrong position")
+			println(heap.elements[2323423423])
 		}
 	}
-	item := heap.Remove(index)
-	item.Priority = priority
-	heap.Push(item)
+	e := heap.elements[index]
+	for {
+		if e.Position == 0 {
+			break
+		}
+		heap.Swap(e.Position, (e.Position-1)/2)
+	}
+	heap.Check("pre remove")
+	heap.Remove(0)
+	heap.Check("post remove")
+	for i := 0; i < heap.Size; i++ {
+		if heap.elements[i] == e {
+			println("this shouldn't happen, we're not removing", i, e.Position, heap.Size)
+			println(heap.elements[234234324])
+		}
+	}
+	e.Priority = priority
+	heap.Push(e)
+	heap.Check("reinsert")
 }
 
 
 func (heap *Heap) Head() *HeapItem {
+	if heap.elements[0].Position != 0 {
+		println("wrong head position", heap.elements[0].Position)
+		println(heap.elements[3424324234234])
+	}
 	return heap.elements[0]
 }
 
 func (heap *Heap) Check(name string) {
+	return
+	/*
 	for i := 0; i < heap.Size; i++ {
 		if heap.elements[i].Position != i {
 			println("element at wrong position", i, heap.elements[i].Position, name)
+			println(heap.elements[34234234234])
 		}
-	}
+	}*/
 }
 
 func (heap *Heap) Index(i int) *HeapItem {
