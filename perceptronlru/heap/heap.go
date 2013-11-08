@@ -29,14 +29,14 @@ func (heap *Heap) Swap(i, j int) {
 	heap.elements[j] = a
 	heap.elements[i].Position = i
 	heap.elements[j].Position = j
-	heap.Check("swap")
+	//heap.Check("swap")
 }
 
 func (heap *Heap) Up(index int) {
-	heap.Check("preup")
+	//heap.Check("preup")
 	for {
 		i := (index - 1) / 2 // parent
-		if i == index || !(heap.elements[i].Priority < heap.elements[index].Priority) {
+		if i == index || (heap.elements[i].Priority < heap.elements[index].Priority) {
 			break
 		}
 		heap.Swap(i, index)
@@ -47,20 +47,20 @@ func (heap *Heap) Up(index int) {
 
 func (heap *Heap) Down(index int) {
 	for {
-		j1 := 2*index + 1
-		if j1 >= heap.Size || j1 < 0 {
+		left := 2*index + 1
+		if left >= heap.Size || left < 0 {
 			break
 		}
-		j := j1
-		p1 := heap.elements[j1].Priority
-		j2 := j1 + 1
-		if j2 < heap.Size {
-			p2 := heap.elements[j2].Priority
+		j := left
+		p1 := heap.elements[left].Priority
+		right := left + 1
+		if right < heap.Size {
+			p2 := heap.elements[right].Priority
 			if !(p1 < p2) {
-				j = j2
+				j = right
 			}
 		}
-		if !(heap.elements[index].Priority < heap.elements[j].Priority) {
+		if (heap.elements[index].Priority < heap.elements[j].Priority) {
 			break
 		}
 		heap.Swap(index, j)
@@ -120,9 +120,9 @@ func (heap *Heap) Reinsert(index int, priority float64) {
 		}
 		heap.Swap(e.Position, (e.Position-1)/2)
 	}
-	heap.Check("pre remove")
+	//heap.Check("pre remove")
 	heap.Remove(0)
-	heap.Check("post remove")
+	//heap.Check("post remove")
 	for i := 0; i < heap.Size; i++ {
 		if heap.elements[i] == e {
 			println("this shouldn't happen, we're not removing", i, e.Position, heap.Size)
@@ -144,14 +144,29 @@ func (heap *Heap) Head() *HeapItem {
 }
 
 func (heap *Heap) Check(name string) {
-	return
-	/*
+	if 1 == 1 {
+		return
+	}
 	for i := 0; i < heap.Size; i++ {
 		if heap.elements[i].Position != i {
 			println("element at wrong position", i, heap.elements[i].Position, name)
 			println(heap.elements[34234234234])
 		}
-	}*/
+		left := 2*i+1
+		if left < heap.Size {
+			if heap.elements[left].Priority < heap.elements[i].Priority {
+				println("violating heap property after", name, i, "left", left, heap.Size)
+				println(heap.elements[left*1000])
+			}
+			right := left + 1
+			if right < heap.Size {
+				if heap.elements[right].Priority < heap.elements[i].Priority {
+					println("violating heap property after", name, i, "right", right)
+					println(heap.elements[left*1000])
+				}
+			}
+		}
+	}
 }
 
 func (heap *Heap) Index(i int) *HeapItem {
