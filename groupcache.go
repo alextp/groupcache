@@ -33,7 +33,7 @@ import (
 	"time"
 
 	pb "github.com/golang/groupcache/groupcachepb"
-	"github.com/golang/groupcache/lfu"
+	"github.com/golang/groupcache/greedydual"
 	"github.com/golang/groupcache/singleflight"
 )
 
@@ -168,6 +168,8 @@ type Group struct {
 type Stats struct {
 	Gets           AtomicInt // any Get request, including from peers
 	CacheHits      AtomicInt // either cache was good
+	Bytes AtomicInt // total bytes
+	ByteHits AtomicInt // How many bytes were hit
 	PeerLoads      AtomicInt // either remote load or remote cache hit (not an error)
 	PeerErrors     AtomicInt
 	Loads          AtomicInt // (gets - cacheHits)
@@ -198,6 +200,8 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 
 	if cacheHit {
 		g.Stats.CacheHits.Add(1)
+		g.Stats.ByteHits.Add(int64(value.Len()))
+		g.Stats.Bytes.Add(int64(value.Len()))
 		return setSinkView(dest, value)
 	}
 
@@ -207,6 +211,7 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 	// case will likely be one caller.
 	destPopulated := false
 	value, destPopulated, err := g.load(ctx, key, dest)
+	g.Stats.Bytes.Add(int64(value.Len()))
 	if err != nil {
 		return err
 	}
@@ -219,7 +224,7 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 // load loads key either by invoking the getter locally or by sending it to another machine.
 func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPopulated bool, err error) {
 	g.Stats.Loads.Add(1)
-	t0 := float64(time.Now().Unix())
+	t0 := time.Now().UnixNano()
 	viewi, err := g.loadGroup.Do(key, func() (interface{}, error) {
 		g.Stats.LoadsDeduped.Add(1)
 		var value ByteView
@@ -243,7 +248,7 @@ func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPo
 		}
 		g.Stats.LocalLoads.Add(1)
 		destPopulated = true // only one caller of load gets this return value
-		g.populateCache(key, value, &g.mainCache, float64(time.Now().Unix())-t0)
+		g.populateCache(key, value, &g.mainCache, float64(t0)*0 + 1)//float64(time.Now().UnixNano()-t0)/float64(value.Len()))
 		return value, nil
 	})
 	if err == nil {
@@ -325,7 +330,7 @@ func (g *Group) CacheStats(which CacheType) CacheStats {
 type cache struct {
 	mu         sync.RWMutex
 	nbytes     int64 // of all keys and values
-	lru        *lfu.Cache
+	lru        *greedydual.Cache
 	nhit, nget int64
 	nevict     int64 // number of evictions
 }
@@ -346,7 +351,7 @@ func (c *cache) add(key string, value ByteView, cost float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
-		c.lru = lfu.New(0.999, 10000000)
+		c.lru = greedydual.New()
 		c.lru.OnEvicted = func(key string, value interface{}) {
 			val := value.(ByteView)
 			c.nbytes -= int64(len(key)) + int64(val.Len())
