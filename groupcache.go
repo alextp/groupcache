@@ -26,13 +26,14 @@ package groupcache
 
 import (
 	"errors"
-	"math/rand"
 	"strconv"
 	"sync"
+	"math/rand"
 	"sync/atomic"
+	"time"
 
 	pb "github.com/golang/groupcache/groupcachepb"
-	"github.com/golang/groupcache/lru"
+	"github.com/golang/groupcache/greedydual"
 	"github.com/golang/groupcache/singleflight"
 )
 
@@ -82,6 +83,10 @@ func GetGroup(name string) *Group {
 // The group name must be unique for each getter.
 func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 	return newGroup(name, cacheBytes, getter, nil)
+}
+
+func ClearGroups() {
+	groups = make(map[string]*Group)
 }
 
 // If peers is nil, the peerPicker is called via a sync.Once to initialize it.
@@ -142,23 +147,13 @@ type Group struct {
 	getter     Getter
 	peersOnce  sync.Once
 	peers      PeerPicker
-	cacheBytes int64 // limit for sum of mainCache and hotCache size
+	cacheBytes int64 // limit for mainCache size
 
 	// mainCache is a cache of the keys for which this process
 	// (amongst its peers) is authorative. That is, this cache
 	// contains keys which consistent hash on to this process's
 	// peer number.
 	mainCache cache
-
-	// hotCache contains keys/values for which this peer is not
-	// authorative (otherwise they would be in mainCache), but
-	// are popular enough to warrant mirroring in this process to
-	// avoid going over the network to fetch from a peer.  Having
-	// a hotCache avoids network hotspotting, where a peer's
-	// network card could become the bottleneck on a popular key.
-	// This cache is used sparingly to maximize the total number
-	// of key/value pairs that can be stored globally.
-	hotCache cache
 
 	// loadGroup ensures that each key is only fetched once
 	// (either locally or remotely), regardless of the number of
@@ -173,6 +168,8 @@ type Group struct {
 type Stats struct {
 	Gets           AtomicInt // any Get request, including from peers
 	CacheHits      AtomicInt // either cache was good
+	Bytes AtomicInt // total bytes
+	ByteHits AtomicInt // How many bytes were hit
 	PeerLoads      AtomicInt // either remote load or remote cache hit (not an error)
 	PeerErrors     AtomicInt
 	Loads          AtomicInt // (gets - cacheHits)
@@ -203,6 +200,8 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 
 	if cacheHit {
 		g.Stats.CacheHits.Add(1)
+		g.Stats.ByteHits.Add(int64(value.Len()))
+		g.Stats.Bytes.Add(int64(value.Len()))
 		return setSinkView(dest, value)
 	}
 
@@ -212,6 +211,7 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 	// case will likely be one caller.
 	destPopulated := false
 	value, destPopulated, err := g.load(ctx, key, dest)
+	g.Stats.Bytes.Add(int64(value.Len()))
 	if err != nil {
 		return err
 	}
@@ -224,6 +224,7 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 // load loads key either by invoking the getter locally or by sending it to another machine.
 func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPopulated bool, err error) {
 	g.Stats.Loads.Add(1)
+	t0 := time.Now().UnixNano()
 	viewi, err := g.loadGroup.Do(key, func() (interface{}, error) {
 		g.Stats.LoadsDeduped.Add(1)
 		var value ByteView
@@ -247,7 +248,7 @@ func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPo
 		}
 		g.Stats.LocalLoads.Add(1)
 		destPopulated = true // only one caller of load gets this return value
-		g.populateCache(key, value, &g.mainCache)
+		g.populateCache(key, value, &g.mainCache, float64(t0)*0 + float64(time.Now().UnixNano()-t0)/float64(value.Len()))
 		return value, nil
 	})
 	if err == nil {
@@ -275,11 +276,8 @@ func (g *Group) getFromPeer(ctx Context, peer ProtoGetter, key string) (ByteView
 		return ByteView{}, err
 	}
 	value := ByteView{b: res.Value}
-	// TODO(bradfitz): use res.MinuteQps or something smart to
-	// conditionally populate hotCache.  For now just do it some
-	// percentage of the time.
 	if rand.Intn(10) == 0 {
-		g.populateCache(key, value, &g.hotCache)
+		g.populateCache(key, value, &g.mainCache, 1)
 	}
 	return value, nil
 }
@@ -288,36 +286,22 @@ func (g *Group) lookupCache(key string) (value ByteView, ok bool) {
 	if g.cacheBytes <= 0 {
 		return
 	}
-	value, ok = g.mainCache.get(key)
-	if ok {
-		return
-	}
-	value, ok = g.hotCache.get(key)
-	return
+	return g.mainCache.get(key)
 }
 
-func (g *Group) populateCache(key string, value ByteView, cache *cache) {
+func (g *Group) populateCache(key string, value ByteView, cache *cache, cost float64) {
 	if g.cacheBytes <= 0 {
 		return
 	}
-	cache.add(key, value)
+	cache.add(key, value, cost)
 
 	// Evict items from cache(s) if necessary.
 	for {
 		mainBytes := g.mainCache.bytes()
-		hotBytes := g.hotCache.bytes()
-		if mainBytes+hotBytes <= g.cacheBytes {
+		if mainBytes <= g.cacheBytes {
 			return
 		}
-
-		// TODO(bradfitz): this is good-enough-for-now logic.
-		// It should be something based on measurements and/or
-		// respecting the costs of different resources.
-		victim := &g.mainCache
-		if hotBytes > mainBytes/8 {
-			victim = &g.hotCache
-		}
-		victim.removeOldest()
+		g.mainCache.removeOldest()
 	}
 }
 
@@ -328,11 +312,6 @@ const (
 	// The MainCache is the cache for items that this peer is the
 	// owner for.
 	MainCache CacheType = iota + 1
-
-	// The HotCache is the cache for items that seem popular
-	// enough to replicate to this node, even though it's not the
-	// owner.
-	HotCache
 )
 
 // CacheStats returns stats about the provided cache within the group.
@@ -340,8 +319,6 @@ func (g *Group) CacheStats(which CacheType) CacheStats {
 	switch which {
 	case MainCache:
 		return g.mainCache.stats()
-	case HotCache:
-		return g.hotCache.stats()
 	default:
 		return CacheStats{}
 	}
@@ -353,7 +330,7 @@ func (g *Group) CacheStats(which CacheType) CacheStats {
 type cache struct {
 	mu         sync.RWMutex
 	nbytes     int64 // of all keys and values
-	lru        *lru.Cache
+	lru        *greedydual.Cache
 	nhit, nget int64
 	nevict     int64 // number of evictions
 }
@@ -370,19 +347,18 @@ func (c *cache) stats() CacheStats {
 	}
 }
 
-func (c *cache) add(key string, value ByteView) {
+func (c *cache) add(key string, value ByteView, cost float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
-		c.lru = &lru.Cache{
-			OnEvicted: func(key lru.Key, value interface{}) {
-				val := value.(ByteView)
-				c.nbytes -= int64(len(key.(string))) + int64(val.Len())
-				c.nevict++
-			},
+		c.lru = greedydual.New()
+		c.lru.OnEvicted = func(key string, value interface{}) {
+			val := value.(ByteView)
+			c.nbytes -= int64(len(key)) + int64(val.Len())
+			c.nevict++
 		}
 	}
-	c.lru.Add(key, value)
+	c.lru.Add(key, value, cost)
 	c.nbytes += int64(len(key)) + int64(value.Len())
 }
 
